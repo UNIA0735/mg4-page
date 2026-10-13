@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Matrix-Game 4.0</title>
+<meta name="description" content="Matrix-Game 4.0: code builds the game, a VLM handles what rules cannot, and a few-step causal video model renders the world in real time.">
+<style>
+  :root {
+    --ink: #33383D; --sub: #7D848A; --hair: #E3E6E9; --panel: #F7F8F9; --bg: #FFFFFF;
+    --sage: #7F8C75; --sage-l: #E8ECE3; --mauve: #85799A; --mauve-l: #EEE9F1;
+    --sand: #A8916F; --sand-l: #F2ECE3; --rose: #A9827A; --rose-l: #F3E8E5;
+    --slate: #4A545E; --slate-l: #E7EAED;
+    --radius: 14px; --maxw: 1080px;
+    --font: "Inter", "Helvetica Neue", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif;
+    --mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); line-height: 1.65; -webkit-font-smoothing: antialiased; }
+  a { color: var(--slate); }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+  /* 导航 */
+  nav { position: sticky; top: 0; z-index: 10; background: rgba(255,255,255,.88); backdrop-filter: blur(8px); border-bottom: 1px solid var(--hair); }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; }
+  nav .brand { font-weight: 700; letter-spacing: .2px; }
+  nav .links a { margin-left: 22px; color: var(--sub); text-decoration: none; font-size: 14px; }
+  nav .links a:hover { color: var(--ink); }
+
+  /* 首屏 */
+  header.hero { padding: 72px 0 32px; text-align: center; }
+  .eyebrow { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 2.4px; text-transform: uppercase; color: var(--mauve); background: var(--mauve-l); padding: 6px 12px; border-radius: 999px; }
+  h1 { font-size: clamp(32px, 5vw, 54px); line-height: 1.12; margin: 18px auto 14px; max-width: 860px; letter-spacing: -.5px; }
+  h1 .grad { background: linear-gradient(90deg, var(--sage), var(--mauve), var(--rose), var(--sage)); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: flow 9s linear infinite; }
+  @keyframes flow { to { background-position: 300% 0; } }
+  .lead { font-size: 18px; color: var(--sub); max-width: 760px; margin: 0 auto; }
+  .authors { margin-top: 18px; font-size: 15px; color: var(--sub); }
+  .btns { margin-top: 26px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; border: 1px solid var(--slate); color: #fff; background: var(--slate); }
+  .btn.soon { background: #fff; color: var(--sub); border-color: var(--hair); cursor: default; }
+  .btn .tag { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--sand); }
+
+  /* 对比滑条 */
+  .compare { position: relative; margin: 40px auto 0; max-width: 960px; aspect-ratio: 864 / 480; border-radius: var(--radius); overflow: hidden; box-shadow: 0 18px 50px rgba(51,56,61,.14); user-select: none; touch-action: none; cursor: ew-resize; }
+  .compare img, .compare canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+  .compare canvas { display: none; }
+  .compare video { display: none; }
+  .compare .top { clip-path: inset(0 calc(100% - var(--pos, 50%)) 0 0); }
+  .compare .bar { position: absolute; top: 0; bottom: 0; left: var(--pos, 50%); width: 2px; background: #fff; transform: translateX(-1px); }
+  .compare .knob { position: absolute; top: 50%; left: var(--pos, 50%); width: 40px; height: 40px; border-radius: 50%; background: #fff; transform: translate(-50%, -50%); box-shadow: 0 4px 14px rgba(0,0,0,.25); display: grid; place-items: center; color: var(--slate); font-weight: 700; font-size: 14px; }
+  .compare .lab { position: absolute; top: 14px; padding: 5px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #fff; background: rgba(51,56,61,.62); }
+  .compare .lab.l { left: 14px; } .compare .lab.r { right: 14px; }
+  .cap { text-align: center; font-size: 13px; color: var(--sub); margin-top: 12px; }
+
+  /* 数字 */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 44px auto 0; max-width: 960px; }
+  .stat { background: var(--panel); border: 1px solid var(--hair); border-radius: var(--radius); padding: 18px 16px; text-align: center; }
+  .stat .num { font-size: 32px; font-weight: 800; color: var(--slate); font-variant-numeric: tabular-nums; }
+  .stat .unit { font-size: 15px; font-weight: 700; color: var(--sub); margin-left: 3px; }
+  .stat .desc { font-size: 13px; color: var(--sub); margin-top: 2px; }
+
+  section { padding: 72px 0 8px; }
+  h2 { font-size: 28px; margin: 0 0 8px; letter-spacing: -.3px; }
+  h2 .k { font-family: var(--mono); font-size: 13px; color: var(--mauve); letter-spacing: 2px; display: block; margin-bottom: 6px; }
+  p.body { font-size: 16.5px; color: #474D53; max-width: 860px; }
+  .pill-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  .pill { font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 999px; border: 1px solid; }
+  .pill.sage { color: var(--sage); border-color: var(--sage); background: var(--sage-l); }
+  .pill.mauve { color: var(--mauve); border-color: var(--mauve); background: var(--mauve-l); }
+  .pill.sand { color: var(--sand); border-color: var(--sand); background: var(--sand-l); }
+  .pill.rose { color: var(--rose); border-color: var(--rose); background: var(--rose-l); }
+
+  /* 方法图分页 */
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 24px 0 14px; }
+  .tab { border: 1px solid var(--hair); background: #fff; color: var(--sub); padding: 8px 14px; border-radius: 999px; font: 600 14px var(--font); cursor: pointer; transition: all .2s; }
+  .tab.on { background: var(--slate); color: #fff; border-color: var(--slate); }
+  .lang { margin-left: auto; display: flex; border: 1px solid var(--hair); border-radius: 999px; overflow: hidden; }
+  .lang button { border: 0; background: #fff; color: var(--sub); padding: 7px 12px; font: 600 13px var(--font); cursor: pointer; }
+  .lang button.on { background: var(--mauve-l); color: var(--mauve); }
+  .figbox { background: #fff; border: 1px solid var(--hair); border-radius: var(--radius); padding: 14px; }
+  .figbox img { width: 100%; display: block; transition: opacity .35s; cursor: zoom-in; }
+  .figcap { font-size: 14px; color: var(--sub); margin-top: 12px; max-width: 900px; }
+
+  /* 滚动 KV 缓存动画 */
+  .kv { margin-top: 36px; background: var(--panel); border: 1px solid var(--hair); border-radius: var(--radius); padding: 20px 22px; }
+  .kv h3 { margin: 0 0 4px; font-size: 17px; }
+  .kv .row { display: flex; align-items: flex-end; gap: 4px; margin: 18px 0 8px; height: 46px; overflow: hidden; }
+  .kv .grp { display: flex; gap: 4px; padding-right: 10px; }
+  .kv .sq { width: 22px; height: 22px; border-radius: 4px; flex: 0 0 auto; transition: transform .45s, opacity .45s, background .45s; }
+  .kv .sq.mem { background: var(--rose); } .kv .sq.ref { background: var(--sand); }
+  .kv .sq.win { background: #C7CDD2; } .kv .sq.cur { background: var(--slate); transform: translateY(-10px); }
+  .kv .sq.enter { opacity: 0; transform: translateY(-24px); }
+  .kv .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--sub); }
+  .kv .legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+  /* 结果 */
+  .video { position: relative; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--hair); background: #000; }
+  .video video { width: 100%; display: block; }
+  .vlabels { display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; font-size: 13px; font-weight: 700; color: var(--sub); margin: 18px 0 8px; }
+  .vlabels span:nth-child(1) { color: var(--sage); } .vlabels span:nth-child(2) { color: var(--slate); } .vlabels span:nth-child(3) { color: var(--sub); }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 22px; }
+  .ph { aspect-ratio: 16 / 9; border-radius: var(--radius); border: 1px dashed #C9CDD1; display: grid; place-items: center; color: var(--sub); font-size: 13px; font-weight: 600;
+        background: linear-gradient(100deg, #F4F5F7 30%, #FAFAFB 50%, #F4F5F7 70%); background-size: 220% 100%; animation: shimmer 2.6s ease-in-out infinite; }
+  @keyframes shimmer { 0% { background-position: 120% 0; } 100% { background-position: -120% 0; } }
+
+  pre.bib { background: var(--panel); border: 1px solid var(--hair); border-radius: var(--radius); padding: 18px; font: 13px/1.6 var(--mono); color: #4A5056; overflow-x: auto; position: relative; }
+  .copy { position: absolute; top: 12px; right: 12px; border: 1px solid var(--hair); background: #fff; border-radius: 8px; padding: 4px 10px; font: 600 12px var(--font); color: var(--sub); cursor: pointer; }
+  footer { padding: 56px 0 40px; text-align: center; font-size: 13px; color: var(--sub); }
+
+  /* 进场动画 */
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity .7s ease, transform .7s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+
+  /* 放大看图 */
+  .lightbox { position: fixed; inset: 0; background: rgba(255,255,255,.96); display: none; z-index: 50; overflow: auto; cursor: zoom-out; }
+  .lightbox.on { display: block; }
+  .lightbox img { display: block; width: min(1800px, 96vw); margin: 2vw auto; }
+
+  @media (max-width: 760px) {
+    .stats, .grid3 { grid-template-columns: repeat(2, 1fr); }
+    nav .links a { margin-left: 14px; }
+    .lang { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+    .reveal { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <span class="brand">Matrix-Game 4.0</span>
+  <span class="links"><a href="#overview">Overview</a><a href="#method">Method</a><a href="#results">Results</a><a href="#bibtex">BibTeX</a></span>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <span class="eyebrow">Project page · preview</span>
+  <h1>Code builds the game, <span class="grad">AI renders the world</span> in real time</h1>
+  <p class="lead">A game engine keeps the world state and draws a cheap low-poly proxy. A VLM decides whatever the rules cannot. A few-step causal video model turns every chunk into a finished frame on a single consumer GPU.</p>
+  <div class="authors">Authors to be announced</div>
+  <div class="btns">
+    <span class="btn soon">Paper <span class="tag">soon</span></span>
+    <span class="btn soon">Code <span class="tag">soon</span></span>
+    <span class="btn soon">Playable demo <span class="tag">soon</span></span>
+  </div>
+
+  <div class="compare reveal" id="cmp" style="--pos:50%">
+    <img src="assets/frames/hero_gen.jpg" alt="Frame generated by our model">
+    <img class="top" src="assets/frames/hero_lowpoly.jpg" alt="Low-poly proxy rendered by the game engine">
+    <canvas id="cmpc" width="864" height="480"></canvas>
+    <video id="pairv" src="assets/video/hero_pair.mp4" muted loop playsinline autoplay preload="auto"></video>
+    <div class="bar"></div><div class="knob">⇆</div>
+    <span class="lab l">Engine low-poly proxy</span><span class="lab r">Ours, rendered</span>
+  </div>
+  <div class="cap">Drag to compare. A real held-out evaluation clip; the left side is all the engine draws.</div>
+
+  <div class="stats">
+    <div class="stat reveal"><div><span class="num" data-to="83">0</span><span class="unit">FPS</span></div><div class="desc">1-step generation, RTX 5090</div></div>
+    <div class="stat reveal"><div><span class="num" data-to="80">0</span><span class="unit">ms</span></div><div class="desc">key press to first reacting frame</div></div>
+    <div class="stat reveal"><div><span class="num" data-to="480">0</span><span class="unit">p</span></div><div class="desc">streaming output</div></div>
+    <div class="stat reveal"><div><span class="num" data-to="1">0</span><span class="unit">GPU</span></div><div class="desc">text encoder, DiT and VAE resident</div></div>
+  </div>
+</div></header>
+
+<section id="overview"><div class="wrap reveal">
+  <h2><span class="k">OVERVIEW</span>A harness around the video model</h2>
+  <p class="body">Interactive world models that only roll out pixels keep the world state implicit: once something leaves the view it is gone, and game rules have to be re-inferred from every frame. We wrap the video model in a harness that owns the state. The game engine evolves everything the rules can decide and renders it as a low-poly proxy. The VLM takes over where rules run out: it turns states into prompts, imagines missing content, reasons about how dialogue or exploration changes the world, and registers its decisions back into the engine.</p>
+  <p class="body">The video model then only has to render. It reads the per-frame proxy, a dynamic caption and a few reference frames, and generates one latent (four frames) per step with a causal DiT distilled to one or two denoising steps.</p>
+  <div class="pill-row">
+    <span class="pill sage">Game engine: rule-based state</span>
+    <span class="pill mauve">VLM: reasoning beyond rules</span>
+    <span class="pill sand">Multi-reference appearance</span>
+    <span class="pill rose">Spatial memory by camera pose</span>
+  </div>
+</div></section>
+
+<section id="method"><div class="wrap">
+  <h2 class="reveal"><span class="k">METHOD</span>How it works</h2>
+  <div class="tabs reveal">
+    <button class="tab on" data-fig="overview">System overview</button>
+    <button class="tab" data-fig="loop">Interaction loop</button>
+    <button class="tab" data-fig="arch">Rendering model</button>
+    <div class="lang"><button data-lang="en" class="on">EN</button><button data-lang="zh">中文</button></div>
+  </div>
+  <div class="figbox reveal"><img id="fig" src="assets/fig/overview_en.png" alt="Method figure"></div>
+  <p class="figcap" id="figcap"></p>
+
+  <div class="kv reveal">
+    <h3>Rolling KV cache, one chunk at a time</h3>
+    <div class="figcap" style="margin-top:0">Each new chunk attends to retrieved spatial memory, the reference frames and a sliding window of recent chunks. The oldest chunk leaves the window as a new one arrives.</div>
+    <div class="row" id="kvrow"></div>
+    <div class="legend">
+      <span><i style="background:var(--rose)"></i>spatial memory</span>
+      <span><i style="background:var(--sand)"></i>reference frames</span>
+      <span><i style="background:#C7CDD2"></i>recent chunks</span>
+      <span><i style="background:var(--slate)"></i>chunk being generated</span>
+    </div>
+  </div>
+</div></section>
+
+<section id="results"><div class="wrap">
+  <h2 class="reveal"><span class="k">RESULTS</span>From proxy to picture</h2>
+  <p class="body reveal">A held-out clip from the desert courtyard scene. The engine provides only the left column; the middle column is generated chunk by chunk; the right column is the ground-truth render for reference.</p>
+  <div class="vlabels reveal"><span>Low-poly control</span><span>Ours</span><span>Ground truth</span></div>
+  <div class="video reveal">
+    <video src="assets/video/courtyard_clip.mp4" poster="assets/video/courtyard_clip_poster.jpg" autoplay muted loop playsinline preload="metadata"></video>
+  </div>
+  <div class="grid3">
+    <div class="ph reveal">Racing demo · coming soon</div>
+    <div class="ph reveal">Third-person shooter · coming soon</div>
+    <div class="ph reveal">Coding-agent custom games · coming soon</div>
+  </div>
+</div></section>
+
+<section id="bibtex"><div class="wrap reveal">
+  <h2><span class="k">CITE</span>BibTeX</h2>
+  <pre class="bib" id="bib"><button class="copy" id="copy">Copy</button>@misc{matrixgame4,
+  title  = {Matrix-Game 4.0},
+  author = {To be announced},
+  year   = {2026},
+  note   = {Project page preview}
+}</pre>
+</div></section>
+
+<footer>Matrix-Game 4.0 · project page preview · content will be updated at release</footer>
+
+<div class="lightbox" id="lb"><img id="lbimg" alt=""></div>
+
+<script>
+// 进场动画与数字滚动
+const io = new IntersectionObserver((es) => es.forEach((e) => {
+  if (!e.isIntersecting) return;
+  e.target.classList.add('in');
+  e.target.querySelectorAll('.num[data-to]').forEach(countUp);
+  io.unobserve(e.target);
+}), { threshold: 0.15 });
+document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+function countUp(el) {
+  const to = +el.dataset.to, t0 = performance.now(), dur = 1400;
+  const step = (t) => { const k = Math.min(1, (t - t0) / dur); el.textContent = Math.round(to * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+
+// 对比滑条：自动来回扫，用户一碰就停
+const cmp = document.getElementById('cmp');
+let auto = true, phase = 0;
+function setPos(p) { cmp.style.setProperty('--pos', Math.max(0, Math.min(100, p)) + '%'); }
+(function sweep() { if (!auto) return; phase += 0.012; setPos(50 + 32 * Math.sin(phase)); requestAnimationFrame(sweep); })();
+function fromEvent(e) { const r = cmp.getBoundingClientRect(); setPos(((e.clientX - r.left) / r.width) * 100); }
+cmp.addEventListener('pointerdown', (e) => { auto = false; cmp.setPointerCapture(e.pointerId); fromEvent(e); });
+cmp.addEventListener('pointermove', (e) => { if (e.buttons) fromEvent(e); });
+
+// 视频版对比：一条视频左半是低模、右半是生成，画布按分割线位置各取一半，两边天然同步
+const pv = document.getElementById('pairv'), cv = document.getElementById('cmpc'), cx = cv.getContext('2d');
+function drawPair() {
+  if (pv.readyState >= 2) {
+    const p = parseFloat(getComputedStyle(cmp).getPropertyValue('--pos')) / 100, w = Math.round(864 * p);
+    cx.drawImage(pv, 864, 0, 864, 480, 0, 0, 864, 480);
+    if (w > 0) cx.drawImage(pv, 0, 0, w, 480, 0, 0, w, 480);
+  }
+  requestAnimationFrame(drawPair);
+}
+pv.addEventListener('playing', () => { cv.style.display = 'block'; }, { once: true });
+pv.play && pv.play().catch(() => {});
+requestAnimationFrame(drawPair);
+
+// 方法图分页与中英切换
+const caps = {
+  overview: 'The VLM and the game engine form the harness of the video model. The engine evolves the state wherever rules apply; the VLM decides what rules cannot and registers it into the engine, and retrieves states to write prompts.',
+  loop: '(A) Once per session, reference frames and a prompt become an appearance prefix. (B) Every chunk, the harness emits a low-poly proxy and a dynamic caption, and the streaming renderer turns them into RGB frames.',
+  arch: 'The rendering model: a 148-channel input (noisy latent, control latent, zero padding), a 30-layer causal DiT with KV-cached self-attention and text cross-attention, a flow update in one or two steps, and a TAEHV decoder.'
+};
+let cur = 'overview', lang = 'en';
+const fig = document.getElementById('fig'), figcap = document.getElementById('figcap');
+function showFig() {
+  fig.style.opacity = 0;
+  setTimeout(() => { fig.src = `assets/fig/${cur}_${lang}.png`; figcap.textContent = caps[cur]; }, 180);
+  fig.onload = () => { fig.style.opacity = 1; };
+}
+document.querySelectorAll('.tab').forEach((b) => b.onclick = () => {
+  document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x === b)); cur = b.dataset.fig; showFig();
+});
+document.querySelectorAll('.lang button').forEach((b) => b.onclick = () => {
+  document.querySelectorAll('.lang button').forEach((x) => x.classList.toggle('on', x === b)); lang = b.dataset.lang; showFig();
+});
+figcap.textContent = caps[cur];
+const lb = document.getElementById('lb');
+fig.onclick = () => { document.getElementById('lbimg').src = fig.src; lb.classList.add('on'); };
+lb.onclick = () => lb.classList.remove('on');
+
+// 滚动 KV 缓存：记忆 3、参考帧 3、窗口 12 格，末格是正在生成的块
+const row = document.getElementById('kvrow');
+function grp(cls, n) { const g = document.createElement('div'); g.className = 'grp'; for (let i = 0; i < n; i++) { const s = document.createElement('div'); s.className = 'sq ' + cls; g.appendChild(s); } row.appendChild(g); return g; }
+grp('mem', 3); grp('ref', 3);
+const win = grp('win', 11);
+win.lastElementChild.className = 'sq cur';
+setInterval(() => {
+  if (document.hidden) return;
+  win.lastElementChild.className = 'sq win';
+  const s = document.createElement('div'); s.className = 'sq cur enter'; win.appendChild(s);
+  requestAnimationFrame(() => requestAnimationFrame(() => s.classList.remove('enter')));
+  const old = win.firstElementChild; old.style.opacity = 0; old.style.transform = 'translateY(14px)';
+  setTimeout(() => old.remove(), 450);
+}, 900);
+
+// 复制 BibTeX
+document.getElementById('copy').onclick = () => {
+  const t = document.getElementById('bib').innerText.replace(/^Copy\s*/, '');
+  navigator.clipboard && navigator.clipboard.writeText(t);
+  document.getElementById('copy').textContent = 'Copied';
+};
+</script>
+</body>
+</html>
